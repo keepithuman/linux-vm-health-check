@@ -1,0 +1,34 @@
+{
+  "health_check": {
+    "timestamp": "{{ health_check_timestamp }}",
+    "hostname": "{{ inventory_hostname }}",
+    "status": "{{ health_status }}",
+    "summary": {
+      "warnings_count": {{ warnings|length }},
+      "critical_issues_count": {{ critical_issues|length }}
+    }
+  },
+  "system_info": {{ system_info | to_nice_json(indent=2) | indent(2) }},
+  "performance_metrics": {
+    "cpu": {
+      "usage_percent": {{ cpu_usage }},
+      "load_average": {{ load_average | to_nice_json(indent=2) | indent(6) }}
+    },
+    "memory": {{ memory_info | to_nice_json(indent=2) | indent(4) }},
+    "disk_usage": {{ disk_usage | to_nice_json(indent=2) | indent(4) }}
+  },
+  "network": {
+    "interfaces": {{ network_interfaces | to_nice_json(indent=2) | indent(4) }}
+  },
+  "services": {
+    "checked_services": {{ check_services | to_nice_json }},
+    "failed_units_count": {{ failed_units.stdout | default(0) }}
+  },
+  "logs": {
+    "recent_errors_count": {{ error_count.stdout | default(0) }}
+  },
+  "issues": {
+    "warnings": {{ warnings | to_nice_json(indent=2) | indent(4) }},
+    "critical": {{ critical_issues | to_nice_json(indent=2) | indent(4) }}
+  }
+}
