@@ -1,0 +1,301 @@
+---
+# Linux VM Health Check Playbook
+# Comprehensive health monitoring and diagnostics for Linux virtual machines
+# Compatible with RHEL, CentOS, Ubuntu, Debian, and SUSE distributions
+
+- name: Linux VM Health Check and Diagnostics
+  hosts: linux_vms
+  gather_facts: true
+  become: true
+  vars:
+    health_check_timestamp: "{{ ansible_date_time.iso8601 }}"
+    report_dir: "/tmp/health_reports"
+    disk_threshold_warning: 80
+    disk_threshold_critical: 90
+    memory_threshold_warning: 80
+    memory_threshold_critical: 90
+    cpu_threshold_warning: 80
+    load_threshold_warning: 2.0
+    check_services:
+      - sshd
+      - systemd-resolved
+      - NetworkManager
+    check_ports:
+      - 22
+      - 80
+      - 443
+    
+  tasks:
+    - name: Create health report directory
+      file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: '0755'
+      tags: ['setup']
+
+    - name: Initialize health status variables
+      set_fact:
+        health_status: "HEALTHY"
+        warnings: []
+        critical_issues: []
+        system_info: {}
+      tags: ['always']
+
+    - name: Gather system information
+      set_fact:
+        system_info:
+          hostname: "{{ ansible_hostname }}"
+          fqdn: "{{ ansible_fqdn }}"
+          distribution: "{{ ansible_distribution }}"
+          distribution_version: "{{ ansible_distribution_version }}"
+          kernel: "{{ ansible_kernel }}"
+          architecture: "{{ ansible_architecture }}"
+          virtualization_type: "{{ ansible_virtualization_type | default('unknown') }}"
+          virtualization_role: "{{ ansible_virtualization_role | default('unknown') }}"
+          uptime: "{{ ansible_uptime_seconds }}"
+          last_boot: "{{ ansible_date_time.epoch|int - ansible_uptime_seconds|int }}"
+      tags: ['info', 'always']
+
+    - name: Check CPU usage
+      shell: |
+        top -bn1 | grep "Cpu(s)" | awk '{print $2}' | sed 's/%us,//'
+      register: cpu_usage_raw
+      changed_when: false
+      tags: ['cpu', 'performance']
+
+    - name: Parse CPU usage
+      set_fact:
+        cpu_usage: "{{ cpu_usage_raw.stdout | float }}"
+      tags: ['cpu', 'performance']
+
+    - name: Check load average
+      set_fact:
+        load_average:
+          1min: "{{ ansible_loadavg['1m'] }}"
+          5min: "{{ ansible_loadavg['5m'] }}"
+          15min: "{{ ansible_loadavg['15m'] }}"
+      tags: ['cpu', 'performance']
+
+    - name: Evaluate CPU health
+      block:
+        - name: Add CPU warning
+          set_fact:
+            warnings: "{{ warnings + ['High CPU usage: ' + cpu_usage|string + '%'] }}"
+          when: cpu_usage|float > cpu_threshold_warning
+        
+        - name: Add load average warning
+          set_fact:
+            warnings: "{{ warnings + ['High load average (1min): ' + load_average['1min']|string] }}"
+          when: load_average['1min']|float > load_threshold_warning
+      tags: ['cpu', 'performance']
+
+    - name: Check memory usage
+      set_fact:
+        memory_info:
+          total_mb: "{{ (ansible_memtotal_mb) }}"
+          free_mb: "{{ ansible_memfree_mb }}"
+          available_mb: "{{ ansible_memory_mb.nocache.free }}"
+          used_mb: "{{ ansible_memtotal_mb - ansible_memfree_mb }}"
+          used_percent: "{{ ((ansible_memtotal_mb - ansible_memory_mb.nocache.free) / ansible_memtotal_mb * 100) | round(1) }}"
+          swap_total_mb: "{{ ansible_swaptotal_mb }}"
+          swap_free_mb: "{{ ansible_swapfree_mb }}"
+          swap_used_percent: "{{ ((ansible_swaptotal_mb - ansible_swapfree_mb) / ansible_swaptotal_mb * 100) | round(1) if ansible_swaptotal_mb > 0 else 0 }}"
+      tags: ['memory', 'performance']
+
+    - name: Evaluate memory health
+      block:
+        - name: Add memory warning
+          set_fact:
+            warnings: "{{ warnings + ['High memory usage: ' + memory_info.used_percent|string + '%'] }}"
+          when: memory_info.used_percent|float > memory_threshold_warning
+        
+        - name: Add memory critical
+          set_fact:
+            critical_issues: "{{ critical_issues + ['Critical memory usage: ' + memory_info.used_percent|string + '%'] }}"
+            health_status: "CRITICAL"
+          when: memory_info.used_percent|float > memory_threshold_critical
+        
+        - name: Add swap warning
+          set_fact:
+            warnings: "{{ warnings + ['High swap usage: ' + memory_info.swap_used_percent|string + '%'] }}"
+          when: memory_info.swap_used_percent|float > 50 and ansible_swaptotal_mb > 0
+      tags: ['memory', 'performance']
+
+    - name: Check disk usage
+      shell: |
+        df -h | awk 'NR>1 {gsub(/%/, "", $5); if($5 > 0) print $6":"$5":"$4}'
+      register: disk_usage_raw
+      changed_when: false
+      tags: ['disk', 'storage']
+
+    - name: Parse disk usage
+      set_fact:
+        disk_usage: |
+          {% set disk_list = [] %}
+          {% for line in disk_usage_raw.stdout_lines %}
+          {% set parts = line.split(':') %}
+          {% if parts|length == 3 %}
+          {% set disk_dict = {
+            'mount': parts[0],
+            'used_percent': parts[1]|int,
+            'available': parts[2]
+          } %}
+          {% set _ = disk_list.append(disk_dict) %}
+          {% endif %}
+          {% endfor %}
+          {{ disk_list }}
+      tags: ['disk', 'storage']
+
+    - name: Evaluate disk health
+      block:
+        - name: Check for disk warnings
+          set_fact:
+            warnings: "{{ warnings + ['High disk usage on ' + item.mount + ': ' + item.used_percent|string + '%'] }}"
+          loop: "{{ disk_usage }}"
+          when: item.used_percent > disk_threshold_warning
+        
+        - name: Check for disk critical issues
+          set_fact:
+            critical_issues: "{{ critical_issues + ['Critical disk usage on ' + item.mount + ': ' + item.used_percent|string + '%'] }}"
+            health_status: "CRITICAL"
+          loop: "{{ disk_usage }}"
+          when: item.used_percent > disk_threshold_critical
+      tags: ['disk', 'storage']
+
+    - name: Check network interfaces
+      set_fact:
+        network_interfaces: |
+          {% set iface_list = [] %}
+          {% for iface in ansible_interfaces %}
+          {% if iface != 'lo' and ansible_facts[iface] is defined %}
+          {% set iface_info = {
+            'name': iface,
+            'ipv4': ansible_facts[iface].get('ipv4', {}).get('address', 'N/A'),
+            'state': ansible_facts[iface].get('operstate', 'unknown'),
+            'mtu': ansible_facts[iface].get('mtu', 'unknown')
+          } %}
+          {% set _ = iface_list.append(iface_info) %}
+          {% endif %}
+          {% endfor %}
+          {{ iface_list }}
+      tags: ['network']
+
+    - name: Check for down network interfaces
+      set_fact:
+        warnings: "{{ warnings + ['Network interface ' + item.name + ' is down'] }}"
+      loop: "{{ network_interfaces }}"
+      when: item.state != 'up' and item.name != 'lo'
+      tags: ['network']
+
+    - name: Check critical services status
+      systemd:
+        name: "{{ item }}"
+      register: service_status
+      loop: "{{ check_services }}"
+      ignore_errors: true
+      tags: ['services']
+
+    - name: Evaluate service health
+      block:
+        - name: Check for stopped services
+          set_fact:
+            critical_issues: "{{ critical_issues + ['Critical service ' + item.item + ' is not running'] }}"
+            health_status: "CRITICAL"
+          loop: "{{ service_status.results }}"
+          when: item.status is defined and item.status.ActiveState != 'active'
+      tags: ['services']
+
+    - name: Check listening ports
+      shell: |
+        netstat -tlnp 2>/dev/null | awk '$1=="tcp" && $4~/:{{ item }}$/ {print "{{ item }}"}' | head -1
+      register: port_check
+      loop: "{{ check_ports }}"
+      changed_when: false
+      ignore_errors: true
+      tags: ['network', 'ports']
+
+    - name: Evaluate port health
+      set_fact:
+        warnings: "{{ warnings + ['Port ' + item.item|string + ' is not listening'] }}"
+      loop: "{{ port_check.results }}"
+      when: item.stdout == ''
+      tags: ['network', 'ports']
+
+    - name: Check system logs for errors
+      shell: |
+        journalctl --since "1 hour ago" --priority=err --no-pager -q | wc -l
+      register: error_count
+      changed_when: false
+      tags: ['logs']
+
+    - name: Check for recent errors in logs
+      set_fact:
+        warnings: "{{ warnings + ['Found ' + error_count.stdout + ' error entries in logs from last hour'] }}"
+      when: error_count.stdout|int > 0
+      tags: ['logs']
+
+    - name: Check for failed systemd units
+      shell: |
+        systemctl --failed --no-legend | wc -l
+      register: failed_units
+      changed_when: false
+      tags: ['services']
+
+    - name: Check for failed units
+      set_fact:
+        warnings: "{{ warnings + ['Found ' + failed_units.stdout + ' failed systemd units'] }}"
+      when: failed_units.stdout|int > 0
+      tags: ['services']
+
+    - name: Set overall health status
+      set_fact:
+        health_status: "WARNING"
+      when: warnings|length > 0 and health_status == "HEALTHY"
+      tags: ['always']
+
+    - name: Generate health report
+      template:
+        src: health_report.j2
+        dest: "{{ report_dir }}/{{ inventory_hostname }}_health_{{ ansible_date_time.date }}_{{ ansible_date_time.time | replace(':', '') }}.json"
+        mode: '0644'
+      tags: ['report']
+
+    - name: Display health summary
+      debug:
+        msg: |
+          === LINUX VM HEALTH CHECK SUMMARY ===
+          Host: {{ inventory_hostname }}
+          Status: {{ health_status }}
+          Timestamp: {{ health_check_timestamp }}
+          
+          System Info:
+          - OS: {{ system_info.distribution }} {{ system_info.distribution_version }}
+          - Kernel: {{ system_info.kernel }}
+          - Uptime: {{ (ansible_uptime_seconds|int / 86400) | round(1) }} days
+          - Virtualization: {{ system_info.virtualization_type }}
+          
+          Performance Metrics:
+          - CPU Usage: {{ cpu_usage }}%
+          - Memory Usage: {{ memory_info.used_percent }}%
+          - Load Average: {{ load_average['1min'] }}
+          
+          {% if warnings|length > 0 %}
+          Warnings ({{ warnings|length }}):
+          {% for warning in warnings %}
+          - {{ warning }}
+          {% endfor %}
+          {% endif %}
+          
+          {% if critical_issues|length > 0 %}
+          Critical Issues ({{ critical_issues|length }}):
+          {% for issue in critical_issues %}
+          - {{ issue }}
+          {% endfor %}
+          {% endif %}
+      tags: ['always']
+
+    - name: Fail playbook if critical issues found
+      fail:
+        msg: "Critical issues detected on {{ inventory_hostname }}. Health status: {{ health_status }}"
+      when: health_status == "CRITICAL" and (fail_on_critical | default(false) | bool)
+      tags: ['always']
