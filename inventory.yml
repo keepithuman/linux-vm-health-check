@@ -1,0 +1,94 @@
+---
+# Ansible Inventory for Linux VM Health Checks
+# Configure your Linux VMs below
+
+all:
+  children:
+    linux_vms:
+      children:
+        production:
+          hosts:
+            # prod-web-01:
+            #   ansible_host: 10.1.1.10
+            #   ansible_user: admin
+            # prod-db-01:
+            #   ansible_host: 10.1.1.11
+            #   ansible_user: admin
+        
+        staging:
+          hosts:
+            # stage-web-01:
+            #   ansible_host: 10.2.1.10
+            #   ansible_user: admin
+        
+        development:
+          hosts:
+            # dev-vm-01:
+            #   ansible_host: 10.3.1.10
+            #   ansible_user: developer
+            localhost:
+              ansible_connection: local
+              ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  
+  vars:
+    # Global variables for all Linux VMs
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    ansible_python_interpreter: /usr/bin/python3
+    
+    # Health check thresholds (can be overridden per host/group)
+    disk_threshold_warning: 80
+    disk_threshold_critical: 90
+    memory_threshold_warning: 80
+    memory_threshold_critical: 90
+    cpu_threshold_warning: 80
+    load_threshold_warning: 2.0
+    
+    # Services to monitor (can be customized per environment)
+    check_services:
+      - sshd
+      - systemd-resolved
+    
+    # Ports to verify are listening
+    check_ports:
+      - 22
+    
+    # Fail playbook on critical issues (set to false for monitoring only)
+    fail_on_critical: false
+
+# Environment-specific configurations
+production:
+  vars:
+    # Stricter thresholds for production
+    disk_threshold_warning: 70
+    memory_threshold_warning: 75
+    check_services:
+      - sshd
+      - systemd-resolved
+      - nginx  # Add web server for production
+      - mysql  # Add database for production
+    check_ports:
+      - 22
+      - 80
+      - 443
+      - 3306
+
+staging:
+  vars:
+    # Moderate thresholds for staging
+    disk_threshold_warning: 75
+    memory_threshold_warning: 80
+    check_services:
+      - sshd
+      - systemd-resolved
+      - nginx
+    check_ports:
+      - 22
+      - 80
+      - 443
+
+development:
+  vars:
+    # Relaxed thresholds for development
+    disk_threshold_warning: 85
+    memory_threshold_warning: 85
+    fail_on_critical: false  # Never fail on dev environments
