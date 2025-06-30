@@ -1,0 +1,5 @@
+---
+# Main entry point for Linux VM Health Check
+# This file includes the main health check playbook
+
+- import_playbook: linux-health-check.yml
