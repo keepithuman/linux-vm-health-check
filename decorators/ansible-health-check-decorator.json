@@ -1,0 +1,380 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ansible Playbook Health Check",
+  "description": "Input validation and parameter schema for Ansible playbook health monitoring services",
+  "type": "object",
+  "properties": {
+    "target_config": {
+      "type": "object",
+      "title": "Target Configuration",
+      "description": "VM and host targeting settings",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "title": "Environment",
+          "description": "Target environment for health checks",
+          "enum": ["development", "staging", "production", "all"],
+          "default": "development"
+        },
+        "target_hosts": {
+          "type": "array",
+          "title": "Target Hosts",
+          "description": "Specific hostnames or IP addresses to check (leave empty for all)",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9.-]+$"
+          },
+          "uniqueItems": true,
+          "examples": [["web-server-01", "db-server-01"], ["10.1.1.10", "10.1.1.11"]]
+        },
+        "host_groups": {
+          "type": "array",
+          "title": "Host Groups",
+          "description": "Ansible inventory groups to target",
+          "items": {
+            "type": "string",
+            "enum": ["linux_vms", "windows_vms", "web_servers", "database_servers", "all"]
+          },
+          "uniqueItems": true,
+          "default": ["linux_vms"]
+        },
+        "parallel_execution": {
+          "type": "integer",
+          "title": "Parallel Execution (Forks)",
+          "description": "Number of hosts to process in parallel",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 5
+        }
+      },
+      "required": ["environment"],
+      "additionalProperties": false
+    },
+    "health_thresholds": {
+      "type": "object",
+      "title": "Health Check Thresholds",
+      "description": "Performance and alerting thresholds",
+      "properties": {
+        "cpu_warning_percent": {
+          "type": "number",
+          "title": "CPU Warning Threshold (%)",
+          "description": "CPU usage percentage to trigger warnings",
+          "minimum": 50,
+          "maximum": 95,
+          "default": 80
+        },
+        "cpu_critical_percent": {
+          "type": "number",
+          "title": "CPU Critical Threshold (%)",
+          "description": "CPU usage percentage to trigger critical alerts",
+          "minimum": 70,
+          "maximum": 99,
+          "default": 90
+        },
+        "memory_warning_percent": {
+          "type": "number",
+          "title": "Memory Warning Threshold (%)",
+          "description": "Memory usage percentage to trigger warnings",
+          "minimum": 50,
+          "maximum": 95,
+          "default": 80
+        },
+        "memory_critical_percent": {
+          "type": "number",
+          "title": "Memory Critical Threshold (%)",
+          "description": "Memory usage percentage to trigger critical alerts",
+          "minimum": 70,
+          "maximum": 99,
+          "default": 90
+        },
+        "disk_warning_percent": {
+          "type": "number",
+          "title": "Disk Warning Threshold (%)",
+          "description": "Disk usage percentage to trigger warnings",
+          "minimum": 50,
+          "maximum": 95,
+          "default": 80
+        },
+        "disk_critical_percent": {
+          "type": "number",
+          "title": "Disk Critical Threshold (%)",
+          "description": "Disk usage percentage to trigger critical alerts",
+          "minimum": 70,
+          "maximum": 99,
+          "default": 90
+        },
+        "load_average_warning": {
+          "type": "number",
+          "title": "Load Average Warning",
+          "description": "Load average threshold for warnings (Linux only)",
+          "minimum": 1.0,
+          "maximum": 10.0,
+          "default": 2.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "monitoring_config": {
+      "type": "object",
+      "title": "Monitoring Configuration",
+      "description": "What to monitor and check",
+      "properties": {
+        "check_services": {
+          "type": "array",
+          "title": "Services to Monitor",
+          "description": "System services to verify are running",
+          "items": {
+            "type": "string",
+            "examples": ["sshd", "nginx", "apache2", "mysql", "postgresql", "docker"]
+          },
+          "default": ["sshd"]
+        },
+        "check_processes": {
+          "type": "array",
+          "title": "Processes to Monitor",
+          "description": "Critical processes to verify are running",
+          "items": {
+            "type": "string",
+            "examples": ["nginx", "apache2", "mysqld", "postgres", "java", "python"]
+          },
+          "default": []
+        },
+        "check_ports": {
+          "type": "array",
+          "title": "Ports to Check",
+          "description": "Network ports to verify are listening",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "uniqueItems": true,
+          "examples": [[22, 80, 443], [3389, 5985, 5986]],
+          "default": [22]
+        },
+        "check_disk_mounts": {
+          "type": "array",
+          "title": "Disk Mounts to Check",
+          "description": "Specific mount points to monitor (leave empty for all)",
+          "items": {
+            "type": "string",
+            "pattern": "^[/\\\\].*",
+            "examples": ["/", "/var", "/home", "C:", "D:"]
+          },
+          "default": []
+        },
+        "enable_log_analysis": {
+          "type": "boolean",
+          "title": "Enable Log Analysis",
+          "description": "Analyze system logs for errors and warnings",
+          "default": true
+        },
+        "log_analysis_hours": {
+          "type": "integer",
+          "title": "Log Analysis Timeframe (Hours)",
+          "description": "How far back to analyze logs",
+          "minimum": 1,
+          "maximum": 168,
+          "default": 24
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution_options": {
+      "type": "object",
+      "title": "Execution Options",
+      "description": "How to run the health checks",
+      "properties": {
+        "check_mode": {
+          "type": "boolean",
+          "title": "Check Mode (Dry Run)",
+          "description": "Run in check mode without making changes",
+          "default": false
+        },
+        "verbose_output": {
+          "type": "boolean",
+          "title": "Verbose Output",
+          "description": "Enable detailed output and debugging",
+          "default": false
+        },
+        "fail_on_critical": {
+          "type": "boolean",
+          "title": "Fail on Critical Issues",
+          "description": "Stop execution when critical issues are found",
+          "default": false
+        },
+        "gather_facts": {
+          "type": "boolean",
+          "title": "Gather System Facts",
+          "description": "Collect detailed system information",
+          "default": true
+        },
+        "timeout_minutes": {
+          "type": "integer",
+          "title": "Execution Timeout (Minutes)",
+          "description": "Maximum time to allow for health checks",
+          "minimum": 5,
+          "maximum": 120,
+          "default": 30
+        },
+        "retry_count": {
+          "type": "integer",
+          "title": "Retry Count",
+          "description": "Number of retries for failed checks",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "reporting_config": {
+      "type": "object",
+      "title": "Reporting Configuration",
+      "description": "Health check reporting and notification settings",
+      "properties": {
+        "generate_report": {
+          "type": "boolean",
+          "title": "Generate Health Report",
+          "description": "Create detailed JSON health reports",
+          "default": true
+        },
+        "report_format": {
+          "type": "string",
+          "title": "Report Format",
+          "description": "Format for health reports",
+          "enum": ["json", "yaml", "html", "text"],
+          "default": "json"
+        },
+        "include_system_info": {
+          "type": "boolean",
+          "title": "Include System Information",
+          "description": "Include detailed system information in reports",
+          "default": true
+        },
+        "include_performance_metrics": {
+          "type": "boolean",
+          "title": "Include Performance Metrics",
+          "description": "Include CPU, memory, and disk metrics",
+          "default": true
+        },
+        "notification_webhook": {
+          "type": "string",
+          "title": "Notification Webhook",
+          "description": "URL for health check notifications",
+          "format": "uri",
+          "examples": ["https://hooks.slack.com/services/..."]
+        },
+        "email_notifications": {
+          "type": "array",
+          "title": "Email Notifications",
+          "description": "Email addresses for health check alerts",
+          "items": {
+            "type": "string",
+            "format": "email"
+          },
+          "uniqueItems": true,
+          "examples": [["admin@company.com", "ops-team@company.com"]]
+        }
+      },
+      "additionalProperties": false
+    },
+    "authentication": {
+      "type": "object",
+      "title": "Authentication Configuration",
+      "description": "Connection and authentication settings",
+      "properties": {
+        "connection_type": {
+          "type": "string",
+          "title": "Connection Type",
+          "description": "How to connect to target hosts",
+          "enum": ["ssh", "winrm", "local"],
+          "default": "ssh"
+        },
+        "ssh_user": {
+          "type": "string",
+          "title": "SSH Username",
+          "description": "Username for SSH connections",
+          "examples": ["admin", "ansible", "ubuntu", "ec2-user"],
+          "default": "admin"
+        },
+        "ssh_key_file": {
+          "type": "string",
+          "title": "SSH Private Key File",
+          "description": "Path to SSH private key file",
+          "examples": ["~/.ssh/id_rsa", "/path/to/private.key"]
+        },
+        "become_method": {
+          "type": "string",
+          "title": "Privilege Escalation Method",
+          "description": "Method for becoming root/administrator",
+          "enum": ["sudo", "su", "doas", "runas"],
+          "default": "sudo"
+        },
+        "become_user": {
+          "type": "string",
+          "title": "Become User",
+          "description": "User to become for privilege escalation",
+          "default": "root"
+        },
+        "connection_timeout": {
+          "type": "integer",
+          "title": "Connection Timeout (Seconds)",
+          "description": "Timeout for initial connections",
+          "minimum": 10,
+          "maximum": 300,
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["target_config"],
+  "additionalProperties": false,
+  "examples": [
+    {
+      "target_config": {
+        "environment": "development",
+        "host_groups": ["linux_vms"],
+        "parallel_execution": 5
+      },
+      "health_thresholds": {
+        "cpu_warning_percent": 80,
+        "memory_warning_percent": 80,
+        "disk_warning_percent": 85
+      },
+      "monitoring_config": {
+        "check_services": ["sshd", "nginx"],
+        "check_ports": [22, 80, 443],
+        "enable_log_analysis": true
+      }
+    },
+    {
+      "target_config": {
+        "environment": "production",
+        "target_hosts": ["web-01.prod.company.com", "web-02.prod.company.com"],
+        "parallel_execution": 10
+      },
+      "health_thresholds": {
+        "cpu_warning_percent": 70,
+        "cpu_critical_percent": 85,
+        "memory_warning_percent": 75,
+        "memory_critical_percent": 90
+      },
+      "monitoring_config": {
+        "check_services": ["nginx", "mysql", "redis"],
+        "check_ports": [22, 80, 443, 3306, 6379],
+        "check_disk_mounts": ["/", "/var", "/opt"]
+      },
+      "execution_options": {
+        "fail_on_critical": true,
+        "timeout_minutes": 45
+      },
+      "reporting_config": {
+        "generate_report": true,
+        "notification_webhook": "https://hooks.slack.com/services/...",
+        "email_notifications": ["ops-team@company.com"]
+      }
+    }
+  ]
+}
