@@ -1,0 +1,15 @@
+# Python requirements for Linux VM Health Check Playbook
+# Install with: pip install -r requirements.txt
+
+# Ansible version
+ansible>=8.0.0,<10.0.0
+
+# Additional Python packages that might be useful
+psutil>=5.9.0  # For system monitoring
+jinja2>=3.1.0  # Template engine
+pyyaml>=6.0    # YAML parsing
+paramiko>=3.0.0  # SSH client
+
+# Optional: for enhanced reporting
+json5>=0.9.0   # Enhanced JSON support
+tabulate>=0.9.0  # Table formatting
